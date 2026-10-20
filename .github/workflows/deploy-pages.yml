@@ -1,0 +1,66 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Lets you re-deploy by hand from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let a running deploy finish rather than cancelling it halfway
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+
+      # Fails with a clear message if Pages isn't switched on for the repo yet
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build static site
+        env:
+          GITHUB_PAGES: "true" # makes next.config.ts emit a static export into ./out
+        run: |
+          REPO="${GITHUB_REPOSITORY#*/}"
+          # <user>.github.io repos are served from the domain root; every other repo from /<repo-name>
+          case "$REPO" in
+            *.github.io) export NEXT_PUBLIC_BASE_PATH="" ;;
+            *) export NEXT_PUBLIC_BASE_PATH="/$REPO" ;;
+          esac
+          echo "Building with base path: '${NEXT_PUBLIC_BASE_PATH}'"
+          yarn build
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
